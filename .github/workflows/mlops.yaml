@@ -12,31 +12,75 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+# Allow the creation and usage of self-hosted runners
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
-  train-report-publish-and-deploy:
-    permissions: write-all
+  setup-runner:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
+      - name: Login to Google Cloud
+        uses: 'google-github-actions/auth@v1'
+        with:
+          credentials_json: '${{ secrets.CML_GCP_SERVICE_ACCOUNT_KEY }}'
+      - name: Get Google Cloud's Kubernetes credentials
+        uses: 'google-github-actions/get-gke-credentials@v1'
+        with:
+          cluster_name: 'mlops-kubernetes'
+          location: 'europe-west6-a'
+      - uses: iterative/setup-cml@v1
+        with:
+          version: '0.19.1'
+      - name: Initialize runner on Kubernetes
+        env:
+          REPO_TOKEN: ${{ secrets.CML_PAT }}
+        run: |
+          export KUBERNETES_CONFIGURATION=$(cat $KUBECONFIG)
+          # https://cml.dev/doc/ref/runner
+          # https://registry.terraform.io/providers/iterative/iterative/latest/docs/resources/task#machine-type
+          # https://registry.terraform.io/providers/iterative/iterative/latest/docs/resources/task#{cpu}-{memory}
+          cml runner \
+            --labels="cml-runner" \
+            --cloud="kubernetes" \
+            --cloud-type="1-2000" \
+            --cloud-kubernetes-node-selector="gpu=true" \
+            --single
+
+  train-and-report:
+    permissions: write-all
+    needs: setup-runner
+    runs-on: [self-hosted, cml-runner]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: '3.11'
           cache: pip
       - name: Install dependencies
         run: pip install --requirement requirements-freeze.txt
       - name: Login to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: 'google-github-actions/auth@v1'
         with:
           credentials_json: '${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}'
       - name: Train model
         run: dvc repro --pull
+        # Node is required to run CML
+      - name: Setup Node
+        if: github.event_name == 'pull_request'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
       - name: Setup CML
         if: github.event_name == 'pull_request'
-        uses: iterative/setup-cml@v2
+        uses: iterative/setup-cml@v1
         with:
-          version: '0.20.0'
+          version: '0.19.1'
       - name: Create CML report
         if: github.event_name == 'pull_request'
         env:
@@ -85,40 +129,11 @@ jobs:
 
           # Publish the CML report
           cml comment update --target=pr --publish report.md
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.GCP_CONTAINER_REGISTRY_HOST }}
-          username: _json_key
-          password: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
-      - name: Import the BentoML model
-        if: github.ref == 'refs/heads/main'
-        run: bentoml models import model/celestial_bodies_classifier_model.bentomodel
-      - name: Build the BentoML model artifact
-        if: github.ref == 'refs/heads/main'
-        run: bentoml build src
-      - name: Containerize and publish the BentoML model artifact Docker image
-        if: github.ref == 'refs/heads/main'
-        run: |
-          # Containerize the Bento
-          bentoml containerize celestial_bodies_classifier:latest \
-            --image-tag ${{ secrets.GCP_CONTAINER_REGISTRY_HOST }}/celestial-bodies-classifier:latest \
-            --image-tag ${{ secrets.GCP_CONTAINER_REGISTRY_HOST }}/celestial-bodies-classifier:${{ github.sha }}
-          # Push the container to the Container Registry
-          docker push --all-tags ${{ secrets.GCP_CONTAINER_REGISTRY_HOST }}/celestial-bodies-classifier
-      - name: Get Google Cloud's Kubernetes credentials
-        if: github.ref == 'refs/heads/main'
-        uses: google-github-actions/get-gke-credentials@v2
-        with:
-          cluster_name: ${{ secrets.GCP_K8S_CLUSTER_NAME }}
-          location: ${{ secrets.GCP_K8S_CLUSTER_ZONE }}
-      - name: Update the Kubernetes deployment
-        if: github.ref == 'refs/heads/main'
-        run: |
-          yq -i '.spec.template.spec.containers[0].image = "${{ secrets.GCP_CONTAINER_REGISTRY_HOST }}/celestial-bodies-classifier:${{ github.sha }}"' kubernetes/deployment.yaml
-      - name: Deploy the model on Kubernetes
-        if: github.ref == 'refs/heads/main'
-        run: |
-          kubectl apply \
-            -f kubernetes/deployment.yaml \
-            -f kubernetes/service.yaml
+
+  deploy:
+    # Runs on main branch only
+    if: github.ref == 'refs/heads/main'
+    needs: train-and-report
+    name: Call Deploy
+    uses: ./.github/workflows/mlops-deploy.yml
+    secrets: inherit
