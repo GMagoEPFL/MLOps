@@ -59,29 +59,17 @@ stages:
     outs:
     - path: model
       hash: md5
-<<<<<<< HEAD
-      md5: e92dd78999ced3135474fbf3633bd3d8.dir
-      size: 4633265
-      nfiles: 7
-=======
       md5: 289d5ac61658ce9b65dba3c5ac5c23f1.dir
       size: 9994474
       nfiles: 6
->>>>>>> refs/remotes/origin/main
   evaluate:
     cmd: python3.11 src/evaluate.py model data/prepared
     deps:
     - path: model
       hash: md5
-<<<<<<< HEAD
-      md5: e92dd78999ced3135474fbf3633bd3d8.dir
-      size: 4633265
-      nfiles: 7
-=======
       md5: 289d5ac61658ce9b65dba3c5ac5c23f1.dir
       size: 9994474
       nfiles: 6
->>>>>>> refs/remotes/origin/main
     - path: src/evaluate.py
       hash: md5
       md5: ea8fcd06510600d9025606f711ec3879
