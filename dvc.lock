@@ -41,8 +41,8 @@ stages:
       nfiles: 8
     - path: src/train.py
       hash: md5
-      md5: b0049e20b3cae364999e3b472af4dd82
-      size: 2528
+      md5: 58d02005ef6a61fbf26a751a4f30e89d
+      size: 3891
     - path: src/utils/seed.py
       hash: md5
       md5: 963a551c177450f50e4f11bd1a9ab2c7
@@ -59,21 +59,21 @@ stages:
     outs:
     - path: model
       hash: md5
-      md5: 810ec30ec64a97fb8ec8d810c2ecbaed.dir
-      size: 2611830
-      nfiles: 6
+      md5: e92dd78999ced3135474fbf3633bd3d8.dir
+      size: 4633265
+      nfiles: 7
   evaluate:
     cmd: python3.11 src/evaluate.py model data/prepared
     deps:
     - path: model
       hash: md5
-      md5: 810ec30ec64a97fb8ec8d810c2ecbaed.dir
-      size: 2611830
-      nfiles: 6
+      md5: e92dd78999ced3135474fbf3633bd3d8.dir
+      size: 4633265
+      nfiles: 7
     - path: src/evaluate.py
       hash: md5
-      md5: 669cfed3e68ac240c7e8a1bf168116af
-      size: 5142
+      md5: ea8fcd06510600d9025606f711ec3879
+      size: 5478
     outs:
     - path: evaluation/metrics.json
       hash: md5
